@@ -111,21 +111,29 @@ const Insights = () => {
     setErrorMessage("");
     setAiInsight("");
 
-    generateInsight(prompt, {
-      onSuccess: (response: string) => {
-        setAiInsight(response);
-      },
-      onError: (error: unknown) => {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Erro ao gerar insight. Tente novamente.";
+    generateInsight(
+      [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      {
+        onSuccess: (response: string) => {
+          setAiInsight(response);
+        },
+        onError: (error: unknown) => {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Erro ao gerar insight. Tente novamente.";
 
-        console.error("Erro ao gerar insight:", message);
-        setErrorMessage(message);
-        setAiInsight("");
-      },
-    });
+          console.error("Erro ao gerar insight:", message);
+          setErrorMessage(message);
+          setAiInsight("");
+        },
+      }
+    );
   };
 
   const totalInsights = insights.length;
