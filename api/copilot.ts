@@ -13,9 +13,13 @@ export default async function handler(req: any, res: any) {
     }
 
     const client = new OpenAI({
-      baseURL: "https://openrouter.ai/api/v1",
-      apiKey: process.env.OPENROUTER_API_KEY,
-    });
+        baseURL: "https://openrouter.ai/api/v1",
+        apiKey: process.env.OPENROUTER_API_KEY,
+        defaultHeaders: {
+            "HTTP-Referer": process.env.OPENROUTER_SITE_URL || "https://copilotodados.vercel.app",
+            "X-Title": process.env.OPENROUTER_APP_NAME || "Copiloto de Dados",
+        },
+        });
 
     const completion = await client.chat.completions.create({
       model: "openrouter/free",
