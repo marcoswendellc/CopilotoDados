@@ -48,12 +48,17 @@ const Resultado = () => {
           { role: "assistant", content: response },
         ]);
       },
-      onError: () => {
+      onError: (error: unknown) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Erro ao consultar o copiloto.";
+
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            content: "Erro ao consultar o copiloto.",
+            content: message,
           },
         ]);
       },

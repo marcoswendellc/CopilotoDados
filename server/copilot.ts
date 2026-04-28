@@ -28,6 +28,12 @@ router.post("/copilot", async (req: Request, res: Response) => {
     const spreadsheetId = String(req.body.spreadsheetId ?? "");
     const range = String(req.body.range ?? "");
 
+    console.log("/api/copilot request", {
+      messageCount: Array.isArray(messages) ? messages.length : 0,
+      spreadsheetId: spreadsheetId || process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+      range: range || process.env.GOOGLE_SHEETS_RANGE,
+    });
+
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({
         error: "Histórico da conversa não informado.",
@@ -48,13 +54,16 @@ router.post("/copilot", async (req: Request, res: Response) => {
           range: range || undefined,
         });
 
+        const sheetContext = truncateText(buildSheetContext(campaignData), 2400);
+        console.log("Dados do Google Sheets prontos", {
+          rowCount: campaignData.length,
+          contextLength: sheetContext.length,
+          preview: sheetContext.slice(0, 400),
+        });
+
         extraMessages.push({
           role: "system",
-          content: `Dados das campanhas lidos do Google Sheets:\n${JSON.stringify(
-            campaignData,
-            null,
-            2
-          )}`,
+          content: sheetContext,
         });
       } catch (error: unknown) {
         console.error("Erro ao carregar dados do Google Sheets:", error);
@@ -67,6 +76,12 @@ router.post("/copilot", async (req: Request, res: Response) => {
       }
     }
 
+    const recentMessages = trimConversation(messages, 8);
+    console.log("Usando histórico do chat", {
+      originalMessages: messages.length,
+      usedMessages: recentMessages.length,
+    });
+
     const completion = await client.chat.completions.create({
       model: "openrouter/free",
       messages: [
@@ -76,7 +91,7 @@ router.post("/copilot", async (req: Request, res: Response) => {
             "Você é um copiloto de dados corporativos. Responda de forma clara, objetiva e útil, sempre em português do Brasil.",
         },
         ...extraMessages,
-        ...messages,
+        ...recentMessages,
       ],
       temperature: 0.3,
     });
@@ -88,14 +103,93 @@ router.post("/copilot", async (req: Request, res: Response) => {
     return res.json({ answer });
   } catch (error: unknown) {
     console.error("Erro OpenRouter:", error);
-
     const message =
       error instanceof Error
         ? error.message
         : "Erro interno ao consultar a OpenRouter.";
 
-    return res.status(500).json({ error: message });
+    const details =
+      error instanceof Error
+        ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack?.split("\n").slice(0, 8),
+          }
+        : { error };
+
+    return res.status(500).json({
+      error: message,
+      details,
+    });
   }
 });
+
+function truncateText(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength - 3)}...`;
+}
+
+function formatSheetValue(value: unknown) {
+  const text = value == null ? "" : String(value).replace(/\s+/g, " ").trim();
+  return text.length > 60 ? `${text.slice(0, 60)}...` : text;
+}
+
+function getNumericValues(values: unknown[]) {
+  return values.filter((value): value is number => typeof value === "number");
+}
+
+function getSampleValues(values: unknown[]) {
+  const unique = Array.from(new Set(values.map((value) => String(value).trim()).filter(Boolean)));
+  return unique.slice(0, 2);
+}
+
+function trimConversation(messages: ChatMessage[], maxMessages: number) {
+  if (messages.length <= maxMessages) {
+    return messages;
+  }
+  return messages.slice(-maxMessages);
+}
+
+function buildSheetContext(campaignData: Array<Record<string, unknown>>) {
+  const totalRows = campaignData.length;
+  const allColumns = totalRows > 0 ? Object.keys(campaignData[0]) : [];
+  const columns = allColumns.slice(0, 6);
+  const summaryRows = campaignData.slice(0, 10);
+  const sampleRows = campaignData.slice(0, 2);
+
+  const columnSummaries = columns.map((column) => {
+    const values = summaryRows.map((row) => row[column]).filter((value) => value != null);
+    const numericValues = getNumericValues(values);
+
+    if (numericValues.length >= 3) {
+      const sum = numericValues.reduce((acc, value) => acc + value, 0);
+      const avg = sum / numericValues.length;
+      const min = Math.min(...numericValues);
+      const max = Math.max(...numericValues);
+      return `- ${column}: numeric, linhas válidas ${numericValues.length}, soma=${sum}, média=${avg.toFixed(2)}, min=${min}, max=${max}`;
+    }
+
+    const sampleValues = getSampleValues(values);
+    return `- ${column}: text, linhas válidas ${values.length}, exemplos: ${sampleValues.join(", ")}`;
+  });
+
+  const sampleText = sampleRows
+    .map((row, index) => {
+      const values = columns
+        .map((column) => `${column}: ${formatSheetValue(row[column])}`)
+        .join(" | ");
+      return `Linha ${index + 1}: ${values}`;
+    })
+    .join("\n");
+
+  const truncatedNotice =
+    totalRows > sampleRows.length
+      ? `\n... exibindo somente os primeiros ${sampleRows.length} registros de ${totalRows} totais.`
+      : "";
+
+  return `Dados das campanhas lidos do Google Sheets:\n- Total de linhas: ${totalRows}\n- Colunas (mostrando até ${columns.length} primeiras): ${columns.join(", ")}\n- Sumário baseado em até ${summaryRows.length} linhas iniciais:\n${columnSummaries.join("\n")}\n- Exemplos das primeiras ${sampleRows.length} linhas:\n${sampleText}${truncatedNotice}\nUse apenas esses dados para responder e não invente informações.`;
+}
 
 export default router;
