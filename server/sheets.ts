@@ -7,7 +7,7 @@ router.get("/campaigns", async (req: Request, res: Response) => {
   const spreadsheetId = String(
     req.query.spreadsheetId ?? process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? ""
   );
-  const range = String(req.query.range ?? process.env.GOOGLE_SHEETS_RANGE ?? "Campanhas!A1:Z1000");
+  const range = String(req.query.range ?? process.env.GOOGLE_SHEETS_RANGE ?? "Dados_copiloto!A1:P20000");
 
   if (!spreadsheetId) {
     return res.status(400).json({

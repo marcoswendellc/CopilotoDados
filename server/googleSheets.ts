@@ -10,7 +10,7 @@ function parseServiceAccountCredentials(raw: string): Record<string, any> {
     return JSON.parse(raw);
   } catch (firstError) {
     try {
-      return JSON.parse(Buffer.from(raw, "base64").toString("utf-8"));
+      return JSON.parse(Buffer.from(raw.trim(), "base64").toString("utf-8"));
     } catch (secondError) {
       throw new Error(
         "Não foi possível interpretar GOOGLE_SERVICE_ACCOUNT_CREDENTIALS. Use JSON puro ou Base64."
@@ -62,19 +62,60 @@ function parseCellValue(value: string | undefined) {
   return cleaned;
 }
 
+async function getFirstSheetTitle(sheets: sheets_v4.Sheets, spreadsheetId: string) {
+  const response = await sheets.spreadsheets.get({ spreadsheetId });
+  const sheetTitles = response.data.sheets
+    ?.map((sheet) => sheet.properties?.title)
+    .filter(Boolean) as string[];
+  return sheetTitles[0];
+}
+
+function normalizeSheetName(sheetName: string) {
+  if (sheetName.includes(" ") || sheetName.match(/[\'\!\,\.\;\:\(\)]/)) {
+    return `'${sheetName.replace(/'/g, "''")}'`;
+  }
+  return sheetName;
+}
+
 export async function readSheetValues(spreadsheetId: string, range: string) {
   console.log("Google Sheets: autenticando e lendo dados", { spreadsheetId, range });
   const sheets = getSheetsClient();
 
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range,
-  });
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range,
+    });
 
-  const rows = response.data.values || [];
-  console.log("Google Sheets: linhas lidas", rows.length);
+    const rows = response.data.values || [];
+    console.log("Google Sheets: linhas lidas", rows.length);
+    return rows as string[][];
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.warn("Google Sheets: falha ao ler range", { range, error: errorMessage });
 
-  return rows as string[][];
+    if (errorMessage.includes("Unable to parse range")) {
+      const firstSheet = await getFirstSheetTitle(sheets, spreadsheetId);
+      if (!firstSheet) {
+        throw error;
+      }
+
+      const normalizedSheet = normalizeSheetName(firstSheet);
+      const fallbackRange = `${normalizedSheet}!A1:Z1000`;
+      console.log("Google Sheets: tentando range alternativo", { fallbackRange });
+
+      const fallbackResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: fallbackRange,
+      });
+
+      const fallbackRows = fallbackResponse.data.values || [];
+      console.log("Google Sheets: linhas lidas com fallback", fallbackRows.length);
+      return fallbackRows as string[][];
+    }
+
+    throw error;
+  }
 }
 
 export function rowsToJson(rows: string[][]) {
