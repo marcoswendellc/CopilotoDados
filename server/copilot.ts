@@ -1,6 +1,15 @@
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
 import { getCampaignData } from "./googleSheets";
+import {
+  buildSheetContext,
+  buildSystemPrompt,
+  executeDataQuery,
+  normalizeContent,
+  parseAssistantAction,
+  rebuildAnswerWithQueryResults,
+  validateQueryAction,
+} from "./copilotService";
 
 const router = Router();
 
@@ -41,6 +50,7 @@ router.post("/copilot", async (req: Request, res: Response) => {
     }
 
     const extraMessages: ChatMessage[] = [];
+    let campaignData: Array<Record<string, unknown>> = [];
     const shouldFetchSheetData = Boolean(
       spreadsheetId ||
         range ||
@@ -49,7 +59,7 @@ router.post("/copilot", async (req: Request, res: Response) => {
 
     if (shouldFetchSheetData) {
       try {
-        const campaignData = await getCampaignData({
+        campaignData = await getCampaignData({
           spreadsheetId: spreadsheetId || undefined,
           range: range || undefined,
         });
@@ -87,48 +97,7 @@ router.post("/copilot", async (req: Request, res: Response) => {
       messages: [
         {
           role: "system",
-          content:
-            "Você é um copiloto de dados.\n\n" +
-            "REGRAS:\n\n" +
-            "1. Você conhece o seguinte schema de dados:\n" +
-            "Tabela: Dados_copiloto\n" +
-            "Campos:\n" +
-            "- cd_compra (int)\n" +
-            "- sk_cliente (int)\n" +
-            "- sk_loja (int)\n" +
-            "- nm_fantasa (string)\n" +
-            "- nm_segmento (string)\n" +
-            "- dt_registro_mos (string)\n" +
-            "- vl_compra (decimal)\n" +
-            "- cd_empreendimento (int)\n" +
-            "- nm_empreendimento (string)\n" +
-            "- cd_promocao (int)\n" +
-            "- nm_promocao (string)\n" +
-            "- sk_dtinicio (string)\n" +
-            "- sk_dtfim (string)\n" +
-            "- tx_cep (int)\n" +
-            "- uf (string)\n" +
-            "- bairro (string)\n\n" +
-            "2. Quando a pergunta do usuário puder ser respondida sem consultar dados, responda diretamente.\n\n" +
-            "3. Quando precisar de dados:\n" +
-            "- NÃO invente dados\n" +
-            "- Gere uma consulta estruturada no formato JSON\n" +
-            "- Solicite apenas os campos necessários\n" +
-            "- Aplique filtros conforme a pergunta\n\n" +
-            "Formato da resposta quando precisar de dados:\n\n" +
-            "{\n" +
-            "  \"acao\": \"consultar_api\",\n" +
-            "  \"dados\": {\n" +
-            "    \"tabela\": \"clientes\",\n" +
-            "    \"campos\": [],\n" +
-            "    \"filtros\": {},\n" +
-            "    \"ordenacao\": \"\",\n" +
-            "    \"limite\": 100\n" +
-            "  }\n" +
-            "}\n\n" +
-            "4. Após receber os dados, gere uma resposta clara e objetiva com insights.\n\n" +
-            "5. Nunca gere comandos destrutivos (DELETE, UPDATE, etc).\n\n" +
-            "Responda sempre em português do Brasil.",
+          content: buildSystemPrompt(),
         },
         ...extraMessages,
         ...recentMessages,
@@ -136,9 +105,31 @@ router.post("/copilot", async (req: Request, res: Response) => {
       temperature: 0.3,
     });
 
-    const answer =
-      completion.choices?.[0]?.message?.content?.trim() ||
-      "Não consegui gerar resposta.";
+    const rawAssistantContent = completion.choices?.[0]?.message?.content;
+    const assistantAction = parseAssistantAction(rawAssistantContent);
+    let validatedAction = null;
+
+    try {
+      validatedAction = assistantAction ? validateQueryAction(assistantAction) : null;
+    } catch (validationError: unknown) {
+      console.error("Ação de consulta inválida:", validationError);
+    }
+
+    if (validatedAction?.acao === "consultar_api") {
+      try {
+        const queryResult = await executeDataQuery(validatedAction, campaignData);
+        const answer = await rebuildAnswerWithQueryResults(messages, validatedAction, queryResult);
+        return res.json({ answer });
+      } catch (actionError: any) {
+        console.error("Erro ao executar consulta de dados:", actionError);
+        const fallback = normalizeContent(rawAssistantContent) || "Não consegui gerar resposta.";
+        return res.json({
+          answer: `A ação de consulta foi detectada, mas não pôde ser executada: ${actionError?.message || "erro desconhecido"}.\n\n${fallback}`,
+        });
+      }
+    }
+
+    const answer = normalizeContent(rawAssistantContent) || "Não consegui gerar resposta.";
 
     return res.json({ answer });
   } catch (error: unknown) {
@@ -171,65 +162,11 @@ function truncateText(value: string, maxLength: number) {
   return `${value.slice(0, maxLength - 3)}...`;
 }
 
-function formatSheetValue(value: unknown) {
-  const text = value == null ? "" : String(value).replace(/\s+/g, " ").trim();
-  return text.length > 60 ? `${text.slice(0, 60)}...` : text;
-}
-
-function getNumericValues(values: unknown[]) {
-  return values.filter((value): value is number => typeof value === "number");
-}
-
-function getSampleValues(values: unknown[]) {
-  const unique = Array.from(new Set(values.map((value) => String(value).trim()).filter(Boolean)));
-  return unique.slice(0, 2);
-}
-
 function trimConversation(messages: ChatMessage[], maxMessages: number) {
   if (messages.length <= maxMessages) {
     return messages;
   }
   return messages.slice(-maxMessages);
-}
-
-function buildSheetContext(campaignData: Array<Record<string, unknown>>) {
-  const totalRows = campaignData.length;
-  const allColumns = totalRows > 0 ? Object.keys(campaignData[0]) : [];
-  const columns = allColumns.slice(0, 6);
-  const summaryRows = campaignData.slice(0, 10);
-  const sampleRows = campaignData.slice(0, 2);
-
-  const columnSummaries = columns.map((column) => {
-    const values = summaryRows.map((row) => row[column]).filter((value) => value != null);
-    const numericValues = getNumericValues(values);
-
-    if (numericValues.length >= 3) {
-      const sum = numericValues.reduce((acc, value) => acc + value, 0);
-      const avg = sum / numericValues.length;
-      const min = Math.min(...numericValues);
-      const max = Math.max(...numericValues);
-      return `- ${column}: numeric, linhas válidas ${numericValues.length}, soma=${sum}, média=${avg.toFixed(2)}, min=${min}, max=${max}`;
-    }
-
-    const sampleValues = getSampleValues(values);
-    return `- ${column}: text, linhas válidas ${values.length}, exemplos: ${sampleValues.join(", ")}`;
-  });
-
-  const sampleText = sampleRows
-    .map((row, index) => {
-      const values = columns
-        .map((column) => `${column}: ${formatSheetValue(row[column])}`)
-        .join(" | ");
-      return `Linha ${index + 1}: ${values}`;
-    })
-    .join("\n");
-
-  const truncatedNotice =
-    totalRows > sampleRows.length
-      ? `\n... exibindo somente os primeiros ${sampleRows.length} registros de ${totalRows} totais.`
-      : "";
-
-  return `Dados das campanhas lidos do Google Sheets:\n- Total de linhas: ${totalRows}\n- Colunas (mostrando até ${columns.length} primeiras): ${columns.join(", ")}\n- Sumário baseado em até ${summaryRows.length} linhas iniciais:\n${columnSummaries.join("\n")}\n- Exemplos das primeiras ${sampleRows.length} linhas:\n${sampleText}${truncatedNotice}\nUse apenas esses dados para responder e não invente informações.`;
 }
 
 export default router;
