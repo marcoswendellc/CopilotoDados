@@ -21,6 +21,14 @@ export type QueryAction = {
   };
 };
 
+export type OpenRouterResponse = {
+  choices?: {
+    message?: {
+      content?: unknown;
+    };
+  }[];
+};
+
 export function normalizeContent(content: unknown) {
   if (typeof content === "string") {
     return content.trim();
@@ -410,9 +418,7 @@ export async function rebuildAnswerWithQueryResults(
     }),
   });
 
-  const followUpData: {
-    choices?: Array<{ message?: { content?: unknown } }>;
-  } = await followUpResponse.json();
+  const followUpData = await followUpResponse.json() as OpenRouterResponse;
 
   if (!followUpResponse.ok) {
     return `O provedor não conseguiu gerar a resposta final. Segue o resultado da consulta diretamente:\n${buildQuerySummary(action, queryResult)}`;

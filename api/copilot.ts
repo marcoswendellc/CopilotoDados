@@ -1,5 +1,5 @@
 import { getCampaignData } from "../server/googleSheets";
-import { buildSheetContext, buildSystemPrompt, validateQueryAction } from "../server/copilotService";
+import { buildSheetContext, buildSystemPrompt, validateQueryAction, OpenRouterResponse } from "../server/copilotService";
 
 function normalizeContent(content: unknown) {
   if (typeof content === "string") {
@@ -243,9 +243,7 @@ async function rebuildAnswerWithQueryResults(
     }),
   });
 
-  const followUpData = (await followUpResponse.json()) as {
-    choices?: Array<{ message?: { content?: unknown } }>;
-  };
+  const followUpData = (await followUpResponse.json()) as OpenRouterResponse;
   if (!followUpResponse.ok) {
     return `O provedor não conseguiu gerar a resposta final automaticamente. Aqui está o resultado da consulta diretamente:\n${buildQuerySummary(action, queryResult)}`;
   }
@@ -317,7 +315,7 @@ export default async function handler(req: any, res: any) {
       }),
     });
 
-    const data = await response.json();
+    const data = await response.json() as OpenRouterResponse;
     console.log("OpenRouter status:", response.status);
     console.log("OpenRouter data:", JSON.stringify(data));
 
