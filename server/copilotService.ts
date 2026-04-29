@@ -410,9 +410,9 @@ export async function rebuildAnswerWithQueryResults(
     }),
   });
 
-  const followUpData = (await followUpResponse.json()) as {
+  const followUpData: {
     choices?: Array<{ message?: { content?: unknown } }>;
-  };
+  } = await followUpResponse.json();
 
   if (!followUpResponse.ok) {
     return `O provedor não conseguiu gerar a resposta final. Segue o resultado da consulta diretamente:\n${buildQuerySummary(action, queryResult)}`;
