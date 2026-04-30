@@ -154,6 +154,13 @@ export function buildSystemPrompt() {
 
   Se precisar de dados, você DEVE obrigatoriamente retornar uma ação "consultar_api".
 
+  - Sempre que a pergunta envolver:
+  - ranking (top 10, melhores, piores)
+  - métricas (faturamento, compras, clientes)
+  - comparações
+    → você DEVE consultar os dados antes de responder.
+    → nunca responda direto nesses casos.
+
   ━━━━━━━━━━━━━━━━━━━
   🧠 REGRAS DE ANÁLISE (OBRIGATÓRIO)
   ━━━━━━━━━━━━━━━━━━━
