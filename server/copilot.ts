@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
-import { getCampaignData } from "./googleSheets";
+import { getCampaignData } from "./googleSheets.js";
 import {
   buildSheetContext,
   buildSystemPrompt,

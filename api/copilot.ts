@@ -1,4 +1,4 @@
-import { getCampaignData } from "../server/googleSheets";
+import { getCampaignData } from "../server/googleSheets.js";
 import { buildSheetContext, buildSystemPrompt, validateQueryAction, OpenRouterResponse } from "../server/copilotService";
 
 function normalizeContent(content: unknown) {

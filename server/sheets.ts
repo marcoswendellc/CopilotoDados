@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { getCampaignData } from "./googleSheets";
+import { getCampaignData } from "./googleSheets.js";
 
 const router = Router();
 
