@@ -473,8 +473,8 @@ export function executeDataQuery(action: QueryAction, campaignData: Array<Record
   const filters = dados.filtros ?? {};
   const fields = dados.campos.length > 0 ? dados.campos : getFieldNames(campaignSchema);
   const sortedRows = sortRows(campaignData.filter((row) => rowMatchesFilters(row, filters)), dados.ordenacao);
-  const limitedRows = sortedRows.slice(0, Math.min(dados.limite, 1000));
-
+  const limitedRows = sortedRows.slice(0, Math.min(dados.limite, 20000)); //aqui limito a quantidade de registros
+  
   return limitedRows.map((row) =>
     fields.reduce((acc, field) => {
       if (field in row) {
