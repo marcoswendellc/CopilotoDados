@@ -1,4 +1,4 @@
-import { campaignSchema, getFieldNames, getFieldType, supportedTableNames } from "./dataSchema";
+import { campaignSchema, getFieldNames, getFieldType, supportedTableNames } from "./dataSchema.js";
 
 type FieldFilterValue =
   | string

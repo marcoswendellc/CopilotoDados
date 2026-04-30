@@ -1,5 +1,5 @@
 import { getCampaignData } from "../server/googleSheets.js";
-import { buildSheetContext, buildSystemPrompt, validateQueryAction, OpenRouterResponse } from "../server/copilotService";
+import { buildSheetContext, buildSystemPrompt, validateQueryAction, OpenRouterResponse } from "../server/copilotService.js";
 
 function normalizeContent(content: unknown) {
   if (typeof content === "string") {
@@ -321,7 +321,7 @@ export default async function handler(req: any, res: any) {
 
     if (!response.ok) {
       return res.status(response.status).json({
-        error: data?.error?.message || "Erro ao consultar OpenRouter",
+        error: (data as any)?.error?.message || "Erro ao consultar OpenRouter",
         details: data,
       });
     }
