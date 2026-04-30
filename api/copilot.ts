@@ -270,7 +270,25 @@ async function rebuildAnswerWithQueryResults(
   - comparações
     → você DEVE consultar os dados antes de responder.
     → nunca responda direto nesses casos.
+    
+  - NUNCA utilize valores de identificadores (ex: cd_compra, sk_cliente, sk_loja) para inferir quantidade de registros
+  - O maior valor de um ID NÃO representa o total de registros
+  - IDs podem conter gaps, não são sequenciais e não devem ser usados para contagem
 
+  - Para obter quantidades:
+    - utilize contagem real de registros
+    - ou agregações corretas
+
+  - Se não houver contagem explícita:
+    → NÃO estime
+    → NÃO deduza
+    → NÃO invente
+    → solicite consulta
+
+  Exemplo de erro proibido:
+  "o maior código é 57 milhões, então existem 57 milhões de registros"
+
+  Esse tipo de inferência é incorreto e proibido.
   ━━━━━━━━━━━━━━━━━━━
   🧠 REGRAS DE ANÁLISE (OBRIGATÓRIO)
   ━━━━━━━━━━━━━━━━━━━
